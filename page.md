@@ -3,44 +3,30 @@
 ## An overview of this integration
 
 ### The what and why for on-chain swiping
+Tomo wants access to the composability provided by having fully on-chain swipes. The team wants anyone to be able to run experiments on top of their application without needing to boostrap their own social graphs. To make this concrete, think of the alternate world where Tinder's graph of swipes was composable. Then Hinge, Bumble, and every other dating app could've leveraged and added to its user base. 
 
-- many blockchain properties useful for different applications
-- for Tomo, the main motivation is composability
-- if all likes / dislikes on-chain, can launch experiments on top w/o
-  needing to bootstrap a social graph
-- if tinder social graph composable, can build hinge / bumble / etc
-- but that's the boring example
-- now can run experiments on ideas that are much harder to bootstrap, eg
-  Tinder (Date Edition), an app where you can organize date parties and around
-  clusters of likes
-- problem with on-chain swipes, all public
-- not good for romantic interests to be public
-- even in the pseudonymous world, isn't good for user A to know that user B has
-  100 other concurrent matches
-- so partnering with Seismic to shield (hide) swipes between
-  wallets
+That's the boring example though. The real value add is with the experiments that may never exist if they needed to bootstrap. Imagine "Tinder (Date Edition)", an app that organizes date parties around clusters of likes. Imagine "Tinder (Second Chance)", an app that connects users who previously disliked each other but should give it another shot. These are only two ideas out of an interesting design space of experimental social interactions that could be tested with composable swipe graphs. 
+
+The dominant issue with this plan: on-chain swipes are public if done in the default way. Users aren't comfortable with romantic interests being public. Even with the pseudonymous nature of wallets, it still isn't acceptable for user A to know that user B has 100 other concurrent matches. This is why Tomo is partnering with Seismic to shield on-chain swipes.
 
 ### How Seismic shields Tomo's Swipe Graph
+Shielded swipes fit well within Seismic's standard cryptosystem. Here's the general idea. Instead of directly broadcasting the swipe from `userA` to `userB` to the chain, push a hiding commitment. Observers can see that `userA` just did some protocol action, but cannot see the content of the swipe, nor who the swipe was directed at. 
 
-- fits well within Seismic's standard crypto system
-- instead of directly broadcasting (userA, userB, like_bool) to chain, push a
-  hiding commitment
-- the pre-image of these commitments are stored in Seismic's auxiliary sequencer
-  running in a secure enclave
-- then if symmetric like, Seismic reveals
-- sample flow
-  - Alice likes bob, swipes right
-  - Alice's client alerts seismic of (Alice, Bob, true), Seismic signs, a-la
-    data availbility style
-  - Alice sends H(Alice, Bob, true) to contract
-  - Bob, at some future date does the same for (Bob, Alice, true)
-  - after this, next time Alice and Bob request for their matches,
-- doc only for swipes, recommending cards up to Tomo
+The pre-images of these hiding commitments are stored in Seismic's auxiliary sequencer running in a secure enclave, which is there so even Seismic operators cannot see the sensitive social graph without a sophisticated exploit. Seismic's job is to reveal symmetric likes. If there exists a commitment on-chain that reflects `userA` liking `userB`, and vice versa, then Seismic tells both users about the match. With any other condition, Seismic will not reveal the contents of swipes.
+
+A sample user sequence may proceed as follows:
+1. Alice likes Bob. She swipes right on her phone. 
+2. Alice's client alerts Seismic's sequencer of `(Alice, Bob, true)`.
+3. Seismic's sequencer signs the hiding commitment `H(Alice, Bob, true)` and sends it back to Alice. 
+4. Alice can then broadcast `H(Alice, Bob, true)` and Seismic's signature to the chain. Notice that this is the same mechanism as with data availability to ensure pre-images are logged before action happens on-chain. 
+5. Bob at some future date is presented with Alice's card and likes her. He goes through steps 1 - 4.
+6. After both Alice's and Bob's transactions are finalized, both are entitled to seeing that they've matched.
+
+It's a specific workflow that has little room for deviation without disrupting the security model. Note that this integration only covers the backend for swipes. Recommending cards, rendering the swipes, and chatting with matches is not included.
 
 ## Interfacing with Seismic
 
 ### Nonce for authenticating with an ETH wallet
-
 - authenticating with seismic the same as with ethereum network
 - sign the keccak hash of your request + a nonce using your ETH privkey, with
   an incrementing nonce to prevent replay attacks
