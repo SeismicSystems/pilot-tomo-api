@@ -35,11 +35,134 @@
 - doc only for swipes, recommending cards up to Tomo
 
 ## Interfacing with Seismic
-### Authenticating with an ETH wallet
-- 
+### Nonce for authenticating with an ETH wallet
+- authenticating with seismic the same as with ethereum network
+- sign the keccak hash of your request + a nonce using your ETH privkey, with 
+  an incrementing nonce to prevent replay attacks
 
-### Sharing an Intent to Signal
+**Request**
+```
+GET /tx_count
+```
+
+**Request Body**
+```
+{
+    address: string
+}
+```
+
+**Response**
+```
+{
+    txCount: number
+}
+```
+
+### Sharing a claimed signal
+- address A claiming they will signal like / dislike of address B
+- claim because they may not actually do this on-chain, in which case it's 
+  never true
+- share claim with Seismic before actually signalling
+- authentication by signing the object with claim and nonce in it, not sig
+- signs the commitment to the signal to confirm reception and sends it back
+- client can verify that the commitment corresponds to their intended signal
+
+```
+const request_sig = await walletClient.signTypedData({
+    walletClient.getAddress(),
+    {
+        name: 'Tomo Swipe Auth',
+        version: env['VERSION'],
+        chainId: env['CHAIN_ID'],
+        verifyingContract: env['CONTRACT_ADDR'],
+    },
+    {
+        ClaimBody: [
+            { name: 'addressA', type: 'string' },
+            { name: 'addressB', type: 'string' },
+            { name: 'positive', type: 'bool' },
+            { name: 'blind', type: 'string' },
+        ],
+        Claim: [
+            { name: 'nonce', type: 'uint256' },
+            { name: 'body', type: 'ClaimBody' },
+        ]
+    },
+    primaryType: 'Claim',
+    message: {
+        nonce: 3,
+        body: {
+            addressA: 0x00000000219ab540356cbb839cbe05303d7705fa,
+            addressB: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,
+            positive: true,
+            blind: 115792089237316195423570985008687907853269984665640564039457584007913129639934,
+        }
+    }
+})
+```
+- request signature is `signTypedData()` on an object with `nonce` and `claim` 
+  fields
+- commitment is `keccak(abi.encodeParameters(['string', 'string', 'bool', 'string'], [addressA, addressB, positive, blind]))`
+- response signature is `signTypedData()` on an object with `commitment` field
+
+**Request**
+```
+POST /claim
+```
+
+**Request Body**
+```
+{
+    claim: Claim,
+    signature: {
+        r: string,
+        s: string,
+        v: string
+    }
+}
+```
+
+**Response**
+```
+{
+    commitment: string,
+    signature: {
+        r: string,
+        s: string,
+        v: string
+    }
+}
+```
+
 ### Fetching matches
+- get all matches that have been finalized on-chain, note this means claimed 
+  matches that aren't confirmed will not be included
+- must specify an index
+
+**Request**
+```
+GET /matches
+```
+
+**Request Body**
+```
+{
+    address: string,
+}
+```
+
+**Response**
+```
+{
+    commitment: string,  # keccak(addressA, addressB, positive)
+    signature: {
+        r: string,
+        s: string,
+        v: string
+    }
+}
+```
 
 ## Interfacing with your target chain
 ### Broadcasting a signal
