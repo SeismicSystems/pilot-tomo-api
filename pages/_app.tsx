@@ -71,9 +71,6 @@ export default function MyApp({ Component, pageProps }: AppProps<MyAppProps>) {
         <link rel="shortcut icon" href="/favicon.ico" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <TopNav>
-      <Link href="/docs">Docs</Link>
-      </TopNav>
       <div className="page">
         <SideNav />
         <main className="flex column">
