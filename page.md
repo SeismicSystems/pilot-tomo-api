@@ -26,11 +26,11 @@ It's a specific workflow that has little room for deviation without disrupting t
 
 ## Interfacing with Seismic
 
-### Nonce for authenticating with an ETH wallet
-- authenticating with seismic the same as with ethereum network
-- sign the keccak hash of your request + a nonce using your ETH privkey, with
-  an incrementing nonce to prevent replay attacks
-using ECDSA signatures
+### Retrieving the nonce for authenticating with an ETH wallet
+#### Description
+Tomo's client interact with Seismic's sequencer in the same way as they do with the Ethereum network. They sign the `keccak` hash of the request, nonce, and domain separator with their ETH private key. 
+
+The signature is of the following type:
 ```
 type Signature = {
     r: string,
@@ -38,6 +38,10 @@ type Signature = {
     v: string
 };
 ```
+
+We allow anyone to get their incrementing nonce through this endpoint. This nonce counts the number of transactions between this wallet and Seismic, not the Ethereum network.
+
+#### Network Calls
 
 **Request**
 
@@ -63,14 +67,10 @@ GET /tx_count
 
 ### Sharing a claimed swipe
 
-- address A claiming they will register a swipe with address B
-- claim because they may not actually do this on-chain, in which case it's
-  never true
-- share claim with Seismic before actually swiping
-- authentication by signing the object with claim and nonce in it, not sig
-- signs the commitment to the swipe to confirm reception and sends it back
-- client can verify that the commitment corresponds to their intended swipe
+#### Description
+Tomo's client communicates with Seismic to claim that it is about to register a swipe. It's a "claim" because the swipe isn't actually registered until it's executed on-chain. 
 
+Signing the claim can be done using the below reference snippet with any library with EIP-721 support. We base all sample code in this doc off of [viem](https://viem.sh/)'s API.
 ```
 const requestSig = await walletClient.signTypedData({
     walletClient.getAddress(),
@@ -81,23 +81,21 @@ const requestSig = await walletClient.signTypedData({
         verifyingContract: env['CONTRACT_ADDR'],
     },
     {
-        ClaimBody: [
-            { name: 'addressA', type: 'address' },
-            { name: 'addressB', type: 'address' },
+        Swipe: [
+            { name: 'recipient', type: 'address' },
             { name: 'positive', type: 'bool' },
             { name: 'blind', type: 'uint256' },
         ],
         Claim: [
             { name: 'nonce', type: 'uint256' },
-            { name: 'body', type: 'ClaimBody' },
+            { name: 'body', type: 'Swipe' },
         ]
     },
     primaryType: 'Claim',
     message: {
         nonce: 3,
         body: {
-            addressA: 0x00000000219ab540356cbb839cbe05303d7705fa,
-            addressB: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,
+            recipient: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,
             positive: true,
             blind: 40240711473155685292128167834219056567299322304092574000529763031142493119900,
         }
@@ -105,10 +103,11 @@ const requestSig = await walletClient.signTypedData({
 });
 ```
 
+Seismic acknowledges the claim by signing the commitment to the swipe. Including the snippet below for completeness, even though it is code that exists on Seismic's side, not on Tomo's side. Tomo's should, however, verify the commitments signed by Seismic correspond to their claimed swipe.
 ```
 const swipeCommitment = keccak(
-  abi.encodeParameters(['string', 'string', 'bool', 'string'], 
-  [addressA, addressB, positive, blind])
+  abi.encodeParameters(['address', 'bool', 'uint256'], 
+  [recipient, positive, blind])
 );
 
 const responseSig = await walletClient.signTypedData({
@@ -130,6 +129,8 @@ const responseSig = await walletClient.signTypedData({
     }
 });
 ```
+
+#### Network Calls
 
 **Request**
 
@@ -157,12 +158,13 @@ POST /claim
 
 ### Fetching matches
 
-- get all matches that have been finalized on-chain, note this means claimed
-  matches that aren't confirmed will not be included
-- must specify an index for which match number to start at, only returns 100
-  matches at a time
-- 
+#### Description
 
+Tomo's client uses Seismic to fetch all matches that have been finalized on-chain. Note this means claim matches that aren't confirmed will **not** be included.
+
+The fetch request must include an index to specify which match number to start at. Seismic returns at most 100 matches at a time for one user. If Tomo's client is more than 100 behind for a user, it can sync through repeated requests. 
+
+As with claimed swipes, we provide a sample code snippet for signing a request to fetch matches:
 ```
 const requestSig = await walletClient.signTypedData({
     walletClient.getAddress(),
@@ -175,14 +177,18 @@ const requestSig = await walletClient.signTypedData({
     {
         Fetch: [
             { name: 'nonce', type: 'uint256' },
+            { name: 'startIndex', type: 'uint256' }
         ]
     },
     primaryType: 'Fetch',
     message: {
         nonce: 4,
+        startIndex: 170
     }
 });
 ```
+
+#### Network Calls
 
 **Request**
 
@@ -203,21 +209,22 @@ GET /matches
 
 ```
 {
-    matches: ClaimBody[]
+    matches: Swipe[]
 }
 ```
 
 ## Interfacing with your target chain
 
 ### Broadcasting a signal
-- send the commitment to the chain, along with the signature of Seismic 
-  acknowledging the pre-image
+The swipe is registered directly with the chain. Users must send the commitment, along with Seismic's signature of acknowledgement. 
 ```
 swipe(uint256 swipeCommitment, ECDSASignature signature)
 ```
 
 ### Verifying swipes 
-- need to do for security model
+Tomo clients should verify that the preimages sent by Seismic are registered on-chain. It's a necessary step to uphold our security model.
+
+The contract maintaines a public mapping of `swipeCommitment` to `bool` for whether it's been registered. The Tomo client can use this to verify the pre-images. 
 ```
 swipeContract.methods.swipes(swipeCommitment).call()
     .then(isPresent => {
